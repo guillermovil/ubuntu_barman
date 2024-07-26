@@ -1,0 +1,61 @@
+-- Pasos para crear la imágen
+docker run -it ubuntu:22.04 bash
+
+-- dentro del docker
+TZ=America/Argentina/Buenos_Aires
+apt-get update
+apt-get install -y \
+    tzdata \
+    wget \
+    gnupg \
+    sudo \
+    lsb-release \
+    openssh-client \
+    cron \
+    nano \
+    vim \
+    rsync
+
+rm -rf /var/lib/apt/lists/*
+
+apt-get update
+apt-get install -y curl ca-certificates gnupg
+curl https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
+sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+apt-get update
+apt-get -y install barman
+ln -s /usr/bin/python3 /usr/bin/python
+
+
+-- desde fuera del docker creamos la imágen
+docker ps -a
+docker commit name_de_dockerubuntu ubuntu_barman
+docker images
+docker run -it ubuntu_barman bash
+
+-- Preparamos todos los archivos necesarios y levantamos el compose
+barman-compose up -d
+
+-- Una vez levantado el compose
+-- Desde dentro del docker con usuario barman:
+-- Para verificar el slot de replicación 
+psql -h 10.19.240.206 -d postgres -U barman -c "select * from pg_replication_slots;"
+
+-- Para forzar la creación de un nuevo wal
+psql -h 10.19.240.206 -d postgres -U barman -c "SELECT pg_switch_wal();"
+
+-- Para forzar la ejecución del cron
+barman cron
+
+-- Para crear un nuevo backup
+barman backup sistemasdb02
+
+-- Para la restauración se cruzó clave publica al servidor donde se restaura
+-- Con usuario barman dentro del docker
+ssh-keygen -t rsa
+ssh-copy-id postgres@host_destino_restauración
+-- Restauración, el servicio postgres destino debe estar detenido
+barman recover --remote-ssh-command "ssh postgres@host_destino_restauración"  barmandef latest   /path/destino/datos
+barman recover --target-time "yyyy-mm-dd hh:mm"  --remote-ssh-command "ssh postgres@host_destino_restauración"  barmandef latest  /path/destino/datos
+
+
